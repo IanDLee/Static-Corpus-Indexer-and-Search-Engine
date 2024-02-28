@@ -6,6 +6,8 @@ from bs4 import BeautifulSoup
 from lxml import html
 import math
 import json
+import time
+
 
 VALID_DOCUMENTS = 0
 UNIQUE_WORDS_SET = set()  # Global set to keep track of unique words
@@ -44,8 +46,7 @@ def create_tokenizer_for_individual_doc(file_path):
     open_file.close()
 
     global VALID_DOCUMENTS
-    print("Files Read: {} | Current file DocId: {}".format(VALID_DOCUMENTS, fullDocID))
-    VALID_DOCUMENTS += 1
+    print(f"\rFiles Read: {VALID_DOCUMENTS} | Current file DocId: {fullDocID}", end = "", flush = True)
 
     #extracts the html contents 
     text_extracter = BeautifulSoup(contents, 'html.parser')
@@ -67,6 +68,8 @@ def create_tokenizer_for_individual_doc(file_path):
         if word.isalpha() and word.isascii():
             lemmatized_word = lemmatizer.lemmatize(word)
             token_DocID_list.append((lemmatized_word, fullDocID))
+    if len(token_DocID_list) > 0:
+        VALID_DOCUMENTS += 1
     return token_DocID_list
 
 def create_document_postings(token_DocID_list):
@@ -119,9 +122,6 @@ def setup_database():
     c.execute('''CREATE TABLE IF NOT EXISTS tokens
                  (token TEXT, doc_id INTEGER, frequency INTEGER, tf REAL, positions TEXT,
                   FOREIGN KEY(doc_id) REFERENCES documents(id))''')
-    c.execute('''CREATE TABLE IF NOT EXISTS postings
-                 (token TEXT, doc_id INTEGER, frequency INTEGER, tf REAL, weight REAL, nweight REAL, positions TEXT,
-                  FOREIGN KEY(doc_id) REFERENCES documents(id))''')
     conn.commit()
     return conn
 
@@ -143,7 +143,7 @@ def store_tokens(conn, postings_dict):
     # Loop through tokens and values and insert every pair
     for token, values in postings_dict.items():
         doc_id, tf, positions = values
-        #convert positions list into storable string
+        #convert positions list into storable string (format is [pos1 pos2 pos3 etc]. To return to list use split())
         positions_string = " ".join(str(i) for i in positions)
         c.execute('INSERT INTO tokens (token, doc_id, frequency, tf, positions) VALUES (?, ?, ?, ?, ?)',
                   (token, doc_id, len(positions), tf, positions_string))
@@ -154,22 +154,25 @@ def retrieve_tokens(conn, token=None):
     c = conn.cursor()
     # Check if token exists or not
     if token:
-        c.execute('SELECT * FROM postings WHERE token = ?', (token,))
+        c.execute('SELECT * FROM final_postings WHERE token = ?', (token,))
     else:
-        c.execute('SELECT * FROM postings')
+        c.execute('SELECT * FROM final_postings')
     
     rows = c.fetchall()
     return rows
 
 def calculate_weight(conn):
     c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS postings
+            (token TEXT, doc_id INTEGER, frequency INTEGER, tf REAL, weight REAL, nweight REAL, positions TEXT,
+            FOREIGN KEY(doc_id) REFERENCES documents(id))''') 
     global UNIQUE_WORDS_SET
     word_set = sorted(UNIQUE_WORDS_SET)
     global VALID_DOCUMENTS
     counter = 1
     for token in word_set:
         #Report processing progress
-        print(f"Progress: {(counter/len(UNIQUE_WORDS_SET))*100:.2f}%")
+        print(f"\rProgress: {(counter/len(UNIQUE_WORDS_SET))*100:.2f}%", end="", flush= True)
         counter += 1
 
         #for every token, calculate the idf
@@ -185,6 +188,38 @@ def calculate_weight(conn):
             c.execute('INSERT INTO postings (token, doc_id, frequency, tf, weight, positions) VALUES(?, ?, ?, ?, ?, ?)', (token, doc_id, frequency, tf, weight, positions))
     conn.commit()
 
+#goes through the postings table and normalizes the weight vectors for each document
+def normalize_weight(conn):
+    c = conn.cursor()
+    #creates new table to store final postings list
+    c.execute('''CREATE TABLE IF NOT EXISTS final_postings
+                 (token TEXT, doc_id INTEGER, positions TEXT, nweight REAL,
+                  FOREIGN KEY(doc_id) REFERENCES documents(id))''')
+    #gets all unique docs
+    c.execute('SELECT DISTINCT doc_id FROM postings')
+    doc_list = c.fetchall()
+    counter = 1
+    for doc in doc_list:
+        #Report processing progress
+        print(f"\rProgress: {(counter/len(doc_list))*100:.2f}% | Current Doc: {doc}", end="", flush= True)
+        counter += 1
+
+        #gets (token, weight) tuple for all postings with the same doc_id
+        c.execute('SELECT token, weight, positions FROM postings WHERE doc_id = ?', (doc))
+        #stores (token, weight) for all tokens in doc
+        token_list = c.fetchall()
+        sum = 0
+        #calculates magnitude of vector
+        for token, weight, positions in token_list:
+            sum += math.pow(weight,2)
+        #holds magnitude
+        magnitude = math.sqrt(sum)
+
+        #normalizes the weights and stores it in new table
+        for token, weight, positions in token_list:
+            nweight = weight/magnitude
+            c.execute('INSERT INTO final_postings (token, doc_id, positions, nweight) VALUES(?, ?, ?, ?)', (token, doc[0], positions, nweight))
+    conn.commit()
 
 def main():
     conn = setup_database()
@@ -224,17 +259,25 @@ def main():
         # Store the tokens in the database
         store_tokens(conn, postings_dict)
 
-    print("Corpus Processed. Now calculating tf-idf weight for tokens...")
-
+    print("\nCorpus Processed. Now calculating tf-idf weight for tokens...")
+    start = time.time()
     calculate_weight(conn)
+    end = time.time()
+    print(f"\nTime Elapsed: {end-start:.2f}")
+
+    start = time.time()
+    normalize_weight(conn)
+    end = time.time()
+    print(f"\nTime Elapsed: {end-start:.2f}")
 
     db_size = int(os.path.getsize(os.path.join(os.getcwd(), "index.db"))/1000)
-    print(f"Database complete! Files successfully read: {VALID_DOCUMENTS} Size of database: {db_size} kb")
+
+    print(f"\nDatabase complete! Files successfully read: {VALID_DOCUMENTS} Size of database: {db_size} kb")
     print(f"Total unique words across all documents: {len(UNIQUE_WORDS_SET)}")
 
-    all = retrieve_tokens(conn,"computer")
-    for i in range(1,100):
-        print(all[i])
+    # all = retrieve_tokens(conn,"computer")
+    # for i in range(1,50):
+    #     print(all[i])
 
 if __name__ == "__main__":
     main()

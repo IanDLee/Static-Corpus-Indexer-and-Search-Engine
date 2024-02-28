@@ -22,7 +22,7 @@ def main():
             else:
                 print(f"\n{result_size} results found.")
                 print(f"\nPrinting {min(result_size, MAX_QUERY_SIZE)} results: ")
-            results = sorted(results, key = lambda x:x[4], reverse = True)
+            results = sorted(results, key = lambda x:x[3], reverse = True)
             i = 0
             while i < min(result_size, MAX_QUERY_SIZE):
                 print(results[i])
