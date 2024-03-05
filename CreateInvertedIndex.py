@@ -8,7 +8,6 @@ import math
 import json
 import time
 
-
 VALID_DOCUMENTS = 0
 UNIQUE_WORDS_SET = set()  # Global set to keep track of unique words
 
@@ -27,7 +26,7 @@ def find_file_paths(subfolder_path):
     return current_files
 
 #function to create the tokenized results for a document (Modified Token, Document ID Pairs)
-def create_tokenizer_for_individual_doc(file_path):
+def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
 
     #finds the name/Doc ID of the current file_path
     #it will be "subfolder/docname"
@@ -50,24 +49,65 @@ def create_tokenizer_for_individual_doc(file_path):
 
     #extracts the html contents 
     text_extracter = BeautifulSoup(contents, 'html.parser')
-    
-    #gets the words
-    words = text_extracter.get_text()
 
-    #tokenizes the words
-    tokenized_words = nltk.word_tokenize(words)
-
-    #creates the lemmatizer
-    lemmatizer = WordNetLemmatizer()
-
-    #list to hold (Modified Token, DocID) pairs 
+    #list to hold (Modified Token, DocID, htmlWeight) pairs 
     token_DocID_list = []
+
+    #sets the html tags by a tier-based ranking
+    level1_tags = ['head', 'title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+    level2_tags = ['b', 'i', 'em', 'u', 'mark', 'meta']
+
+    for tag in text_extracter.find_all():
+
+        #gets the weight of the html tag
+        if tag.name in level1_tags:
+            weight = 2
+        elif tag.name in level2_tags:
+            weight = 1.5
+        else:
+            weight = 1
+        
+        #handles anchor text by adding the anchor text to the tokens of target
+        if tag.name == 'a':
+            #gets the anchor words
+            anchor_words= tag.text.strip()
+            #gets the URL of the target
+            url = tag.get('href')
+            targetDocID = ""
+
+            #finds the URL key from the bookkeepign file
+            if anchor_words:
+                for key, value in bookkeeping_data.items():
+                    if value == url:
+                        targetDocID = key
+            if targetDocID:
+                #tokenizes the words
+                tokenized_words = nltk.word_tokenize(anchor_words)
+
+                #creates the lemmatizer
+                lemmatizer = WordNetLemmatizer()
+
+                #loops through each word and adds lemmatized tuple to the list
+                for word in tokenized_words:
+                    if word.isalpha() and word.isascii():
+                        lemmatized_word = lemmatizer.lemmatize(word)
+                        token_DocID_list.append((lemmatized_word, targetDocID, weight))
+
+        #gets the words
+        words = tag.text.strip()
+
+        #tokenizes the words
+        tokenized_words = nltk.word_tokenize(words)
+
+        #creates the lemmatizer
+        lemmatizer = WordNetLemmatizer()
+
+        #loops through each word and adds lemmatized tuple to the list
+        for word in tokenized_words:
+            if word.isalpha() and word.isascii():
+                lemmatized_word = lemmatizer.lemmatize(word)
+                token_DocID_list.append((lemmatized_word, fullDocID, weight))
     
-    #loops through each word and adds lemmatized tuple to the list
-    for word in tokenized_words:
-        if word.isalpha() and word.isascii():
-            lemmatized_word = lemmatizer.lemmatize(word)
-            token_DocID_list.append((lemmatized_word, fullDocID))
     if len(token_DocID_list) > 0:
         VALID_DOCUMENTS += 1
     return token_DocID_list
@@ -99,14 +139,21 @@ def create_document_postings(token_DocID_list):
                 word_count = values[1]
                 doc_positions = values[2]
                 doc_positions.append(iter)
+                html_weight_dict = values[3]
+                if token[2] in html_weight_dict:
+                    html_weight_dict[token[2]] += 1
+                else:
+                    html_weight_dict[token[2]] = 1
+
                 #increments word count, and appends the current list position to the list of positions
-                postings_dict[token[0]] = [docid, word_count + 1, doc_positions]
+                postings_dict[token[0]] = [docid, word_count + 1, doc_positions, html_weight_dict]
             else:
                 #creates new dictionary entry with docid, word count = 1, and doc position
                 docid = token[1]
                 word_count = 1
                 doc_positions = [iter]
-                postings_dict[token[0]] = [docid, word_count, doc_positions]
+                html_weight_dict = {token[2]: 1}
+                postings_dict[token[0]] = [docid, word_count, doc_positions, html_weight_dict]
                 unique_tokens += 1
         iter += 1
     return postings_dict
@@ -129,9 +176,17 @@ def setup_database():
 def calculate_tf(postings_dict):
     # Loop through token posting dictionary
     for token, posting in postings_dict.items():
+        tf = 0
+
         # Separate values to find IDF
-        doc_id, token_frequency, positions = posting
-        tf = math.log10(token_frequency) + 1
+        doc_id, token_frequency, positions, html_weight_dict = posting
+
+        #gets the html tag weights as the keys of the dictionary
+        html_weights = list(html_weight_dict.keys())
+        
+        #calculates individual tf weight for each html tag word, and adds to tf
+        for weight in html_weights:
+            tf += ((math.log10(html_weight_dict[weight]) + 1) * weight)
 
         # Return a tfidf dictionary sorted by token key
         postings_dict[token][1] = tf
@@ -142,7 +197,7 @@ def store_tokens(conn, postings_dict):
     c = conn.cursor()
     # Loop through tokens and values and insert every pair
     for token, values in postings_dict.items():
-        doc_id, tf, positions = values
+        doc_id, tf, positions, html_weights = values
         #convert positions list into storable string (format is [pos1 pos2 pos3 etc]. To return to list use split())
         positions_string = " ".join(str(i) for i in positions)
         c.execute('INSERT INTO tokens (token, doc_id, frequency, tf, positions) VALUES (?, ?, ?, ?, ?)',
@@ -235,29 +290,29 @@ def main():
         conn.execute('INSERT INTO documents VALUES (?, ?)', (doc, path))
 
     # #loops through each subfolder
-    # for file in find_file_paths(webpages_raw_directory):
-    #     #checks if the subfolder is a directory
-    #     if os.path.isdir(file):
-    #         #goes through each file in the subfolder
-    #         for subfile in find_file_paths(file):
-    #             #tokenizes the document
-    #             token_DocID_list = create_tokenizer_for_individual_doc(subfile)
-    #             #creates the token_list
-    #             postings_dict = create_document_postings(token_DocID_list)
-    #             # Calculate TF-IDF for token and document postings
-    #             postings_dict = calculate_tf(postings_dict)
-    #             # Store the tokens in the database
-    #             store_tokens(conn, postings_dict)
-            #             #tokenizes the document
-    file = "C:\\Users\\ianle\\Documents\\UCI\\CS121\\Project3\\webpages\\WEBPAGES_RAW\\0" # AGGGGG
-    for subfile in find_file_paths(file): 
-        token_DocID_list = create_tokenizer_for_individual_doc(subfile)
-        #creates the token_list
-        postings_dict = create_document_postings(token_DocID_list)
-        # Calculate TF-IDF for token and document postings
-        postings_dict = calculate_tf(postings_dict)
-        # Store the tokens in the database
-        store_tokens(conn, postings_dict)
+    for file in find_file_paths(webpages_raw_directory):
+        #checks if the subfolder is a directory
+        if os.path.isdir(file):
+            #goes through each file in the subfolder
+            for subfile in find_file_paths(file):
+                #tokenizes the document
+                token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+                #creates the token_list
+                postings_dict = create_document_postings(token_DocID_list)
+                # Calculate TF-IDF for token and document postings
+                postings_dict = calculate_tf(postings_dict)
+                # Store the tokens in the database
+                store_tokens(conn, postings_dict)
+                        #tokenizes the document
+    #file = "/Users/williamfigura/Documents/UCI/CS 121/Homework 3/WEBPAGES_RAW/0" # AGGGGG
+    # for subfile in find_file_paths(file): 
+    #     token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+    #     #creates the token_list
+    #     postings_dict = create_document_postings(token_DocID_list)
+    #     # Calculate TF-IDF for token and document postings
+    #     postings_dict = calculate_tf(postings_dict)
+    #     # Store the tokens in the database
+    #     store_tokens(conn, postings_dict)
 
     print("\nCorpus Processed. Now calculating tf-idf weight for tokens...")
     start = time.time()
