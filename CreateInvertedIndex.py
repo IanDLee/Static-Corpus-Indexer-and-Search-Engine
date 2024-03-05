@@ -276,6 +276,32 @@ def normalize_weight(conn):
             c.execute('INSERT INTO final_postings (token, doc_id, positions, nweight) VALUES(?, ?, ?, ?)', (token, doc[0], positions, nweight))
     conn.commit()
 
+def compute_cosine_similarity(conn, query):
+    # Tokenize and lemmatize the query terms
+    lemmatizer = WordNetLemmatizer()
+    query_terms = nltk.word_tokenize(query)
+    query_terms = [lemmatizer.lemmatize(term.lower()) for term in query_terms if term.isalpha()]
+
+    # Initialize scores and length
+    scores = {}
+
+    # Initialize all doc_id's with default scores and length
+    c = conn.cursor()
+
+    # Calculate scores for each document
+    for term in query_terms:
+        c.execute('SELECT doc_id, nweight FROM final_postings WHERE token = ?', (term,))
+        postings = c.fetchall()
+        # Add to scores and length based on weight of doc_id
+        for doc_id, weight in postings:
+            if doc_id in scores:
+                scores[doc_id] += weight
+            else:
+                scores[doc_id] = weight
+
+    # Return sorted scores
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
 def main():
     conn = setup_database()
     #asks user for input to webpages_raw_directory
@@ -289,30 +315,30 @@ def main():
     for doc, path in bookkeeping_data.items():
         conn.execute('INSERT INTO documents VALUES (?, ?)', (doc, path))
 
-    # #loops through each subfolder
-    for file in find_file_paths(webpages_raw_directory):
-        #checks if the subfolder is a directory
-        if os.path.isdir(file):
-            #goes through each file in the subfolder
-            for subfile in find_file_paths(file):
-                #tokenizes the document
-                token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
-                #creates the token_list
-                postings_dict = create_document_postings(token_DocID_list)
-                # Calculate TF-IDF for token and document postings
-                postings_dict = calculate_tf(postings_dict)
-                # Store the tokens in the database
-                store_tokens(conn, postings_dict)
+    # # #loops through each subfolder
+    # for file in find_file_paths(webpages_raw_directory):
+    #     #checks if the subfolder is a directory
+    #     if os.path.isdir(file):
+    #         #goes through each file in the subfolder
+    #         for subfile in find_file_paths(file):
+    #             #tokenizes the document
+    #             token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+    #             #creates the token_list
+    #             postings_dict = create_document_postings(token_DocID_list)
+    #             # Calculate TF-IDF for token and document postings
+    #             postings_dict = calculate_tf(postings_dict)
+    #             # Store the tokens in the database
+    #             store_tokens(conn, postings_dict)
                         #tokenizes the document
-    #file = "/Users/williamfigura/Documents/UCI/CS 121/Homework 3/WEBPAGES_RAW/0" # AGGGGG
-    # for subfile in find_file_paths(file): 
-    #     token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
-    #     #creates the token_list
-    #     postings_dict = create_document_postings(token_DocID_list)
-    #     # Calculate TF-IDF for token and document postings
-    #     postings_dict = calculate_tf(postings_dict)
-    #     # Store the tokens in the database
-    #     store_tokens(conn, postings_dict)
+    file = "C:\\Users\\ianle\\Documents\\UCI\\CS121\\Project3\\webpages\\WEBPAGES_RAW\\0" # AGGGGG
+    for subfile in find_file_paths(file): 
+        token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+        #creates the token_list
+        postings_dict = create_document_postings(token_DocID_list)
+        # Calculate TF-IDF for token and document postings
+        postings_dict = calculate_tf(postings_dict)
+        # Store the tokens in the database
+        store_tokens(conn, postings_dict)
 
     print("\nCorpus Processed. Now calculating tf-idf weight for tokens...")
     start = time.time()
