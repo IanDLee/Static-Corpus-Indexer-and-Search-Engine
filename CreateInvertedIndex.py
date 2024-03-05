@@ -10,6 +10,8 @@ import time
 
 VALID_DOCUMENTS = 0
 UNIQUE_WORDS_SET = set()  # Global set to keep track of unique words
+L1_TAGS = ['head', 'title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+L2_TAGS = ['b', 'i', 'em', 'u', 'mark', 'meta']
 
 #given a subfolder path, this function returns the path the files as a list inside that subfolder
 def find_file_paths(subfolder_path):
@@ -26,7 +28,7 @@ def find_file_paths(subfolder_path):
     return current_files
 
 #function to create the tokenized results for a document (Modified Token, Document ID Pairs)
-def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
+def create_tokenizer_for_individual_doc(file_path, url_dict):
 
     #finds the name/Doc ID of the current file_path
     #it will be "subfolder/docname"
@@ -54,15 +56,12 @@ def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
     token_DocID_list = []
 
     #sets the html tags by a tier-based ranking
-    level1_tags = ['head', 'title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
-    level2_tags = ['b', 'i', 'em', 'u', 'mark', 'meta']
-
     for tag in text_extracter.find_all():
 
         #gets the weight of the html tag
-        if tag.name in level1_tags:
+        if tag.name in L1_TAGS:
             weight = 2
-        elif tag.name in level2_tags:
+        elif tag.name in L2_TAGS:
             weight = 1.5
         else:
             weight = 1
@@ -77,9 +76,8 @@ def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
 
             #finds the URL key from the bookkeepign file
             if anchor_words:
-                for key, value in bookkeeping_data.items():
-                    if value == url:
-                        targetDocID = key
+                targetDocID = url_dict.get(url)
+
             if targetDocID:
                 #tokenizes the words
                 tokenized_words = nltk.word_tokenize(anchor_words)
@@ -91,7 +89,7 @@ def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
                 for word in tokenized_words:
                     if word.isalpha() and word.isascii():
                         lemmatized_word = lemmatizer.lemmatize(word)
-                        token_DocID_list.append((lemmatized_word, targetDocID, weight))
+                        token_DocID_list.append((lemmatized_word.lower(), targetDocID, weight))
 
         #gets the words
         words = tag.text.strip()
@@ -106,7 +104,7 @@ def create_tokenizer_for_individual_doc(file_path, bookkeeping_data):
         for word in tokenized_words:
             if word.isalpha() and word.isascii():
                 lemmatized_word = lemmatizer.lemmatize(word)
-                token_DocID_list.append((lemmatized_word, fullDocID, weight))
+                token_DocID_list.append((lemmatized_word.lower(), fullDocID, weight))
     
     if len(token_DocID_list) > 0:
         VALID_DOCUMENTS += 1
@@ -281,7 +279,6 @@ def compute_cosine_similarity(conn, query):
     lemmatizer = WordNetLemmatizer()
     query_terms = nltk.word_tokenize(query)
     query_terms = [lemmatizer.lemmatize(term.lower()) for term in query_terms if term.isalpha()]
-
     # Initialize scores and length
     scores = {}
 
@@ -314,7 +311,10 @@ def main():
 
     for doc, path in bookkeeping_data.items():
         conn.execute('INSERT INTO documents VALUES (?, ?)', (doc, path))
-
+    start = time.time()
+    url_dict = {}
+    for key, value in bookkeeping_data.items():
+        url_dict[value] = key
     # # #loops through each subfolder
     # for file in find_file_paths(webpages_raw_directory):
     #     #checks if the subfolder is a directory
@@ -332,33 +332,31 @@ def main():
                         #tokenizes the document
     file = "C:\\Users\\ianle\\Documents\\UCI\\CS121\\Project3\\webpages\\WEBPAGES_RAW\\0" # AGGGGG
     for subfile in find_file_paths(file): 
-        token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+        token_DocID_list = create_tokenizer_for_individual_doc(subfile, url_dict)
         #creates the token_list
         postings_dict = create_document_postings(token_DocID_list)
         # Calculate TF-IDF for token and document postings
         postings_dict = calculate_tf(postings_dict)
         # Store the tokens in the database
         store_tokens(conn, postings_dict)
+    end = time.time()
+    print(f"\nTime Elapsed: {end-start:.2f} s")
 
     print("\nCorpus Processed. Now calculating tf-idf weight for tokens...")
     start = time.time()
     calculate_weight(conn)
     end = time.time()
-    print(f"\nTime Elapsed: {end-start:.2f}")
+    print(f"\nTime Elapsed: {end-start:.2f} s")
 
     start = time.time()
     normalize_weight(conn)
     end = time.time()
-    print(f"\nTime Elapsed: {end-start:.2f}")
+    print(f"\nTime Elapsed: {end-start:.2f} s")
 
     db_size = int(os.path.getsize(os.path.join(os.getcwd(), "index.db"))/1000)
 
     print(f"\nDatabase complete! Files successfully read: {VALID_DOCUMENTS} Size of database: {db_size} kb")
     print(f"Total unique words across all documents: {len(UNIQUE_WORDS_SET)}")
-
-    # all = retrieve_tokens(conn,"computer")
-    # for i in range(1,50):
-    #     print(all[i])
 
 if __name__ == "__main__":
     main()
