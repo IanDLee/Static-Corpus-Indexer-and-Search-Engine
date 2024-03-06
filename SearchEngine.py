@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import os
-from CreateInvertedIndex import retrieve_tokens
+from CreateInvertedIndex import compute_cosine_similarity
 
 MAX_QUERY_SIZE = 20
 
@@ -14,7 +14,7 @@ def main():
         #gets the users query for the databse until the user enters quit
         query = input("\nPlease enter your query for the database.  Enter 'quit' to quit program: ")
         if query != 'quit':
-            results = retrieve_tokens(conn, query)
+            results = compute_cosine_similarity(conn, query)
             result_size = len(results)
             if result_size == 0:
                 print("\nNo results found.")
@@ -22,11 +22,10 @@ def main():
             else:
                 print(f"\n{result_size} results found.")
                 print(f"\nPrinting {min(result_size, MAX_QUERY_SIZE)} results: ")
-            results = sorted(results, key = lambda x:x[3], reverse = True)
             i = 0
             while i < min(result_size, MAX_QUERY_SIZE):
                 print(results[i])
-                c.execute('SELECT * FROM documents WHERE id = ?', (results[i][1],))
+                c.execute('SELECT * FROM documents WHERE id = ?', (results[i][0],))
                 link = c.fetchone()
                 print(f"{i + 1}. {link[1]}")
                 i += 1
