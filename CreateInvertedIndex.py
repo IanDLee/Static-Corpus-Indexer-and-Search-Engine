@@ -10,7 +10,7 @@ import time
 
 VALID_DOCUMENTS = 0
 UNIQUE_WORDS_SET = set()  # Global set to keep track of unique words
-L1_TAGS = ['head', 'title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'abstract']
+L1_TAGS = ['head', 'title', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
 L2_TAGS = ['b', 'i', 'em', 'u', 'mark', 'meta']
 
 #given a subfolder path, this function returns the path the files as a list inside that subfolder
@@ -74,9 +74,6 @@ def create_tokenizer_for_individual_doc(file_path, url_dict):
             url = tag.get('href')
             targetDocID = ""
 
-            #sets anchor weight to 2 for target page
-            target_weight = 2
-
             #finds the URL key from the bookkeepign file
             if anchor_words:
                 targetDocID = url_dict.get(url)
@@ -92,7 +89,7 @@ def create_tokenizer_for_individual_doc(file_path, url_dict):
                 for word in tokenized_words:
                     if word.isalpha() and word.isascii():
                         lemmatized_word = lemmatizer.lemmatize(word)
-                        token_DocID_list.append((lemmatized_word.lower(), targetDocID, target_weight))
+                        token_DocID_list.append((lemmatized_word.lower(), targetDocID, weight))
 
         #gets the words
         words = tag.text.strip()
@@ -302,6 +299,33 @@ def compute_cosine_similarity(conn, query):
     # Return sorted scores
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
+def get_info(path):
+    open_file = open(path, 'r', encoding='utf-8')
+    try:
+        content = open_file.read()
+    except:
+        print("File error")
+        return (None, None)
+    open_file.close()
+
+    soup = BeautifulSoup(content, "html.parser")
+    if(soup):
+        title = soup.find('title')
+    if(title):
+        title = title.string.strip()
+
+    description = soup.find('meta', attrs={'name' : 'description'})
+    if(description):
+        description = description.get('content')
+    else:
+        text = soup.get_text().replace('\n', ' ')
+        text = ' '.join(text.split())
+        description = text[0:300] + "..."
+
+    print(f"Title:\n {title}\n")
+    print(f"Description:\n {description}\n")
+    return(title, description)
+
 def main():
     conn = setup_database()
     #asks user for input to webpages_raw_directory
@@ -318,30 +342,30 @@ def main():
     url_dict = {}
     for key, value in bookkeeping_data.items():
         url_dict[value] = key
-    # #loops through each subfolder
-    for file in find_file_paths(webpages_raw_directory):
-        #checks if the subfolder is a directory
-        if os.path.isdir(file):
-            #goes through each file in the subfolder
-            for subfile in find_file_paths(file):
-                #tokenizes the document
-                token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
-                #creates the token_list
-                postings_dict = create_document_postings(token_DocID_list)
-                # Calculate TF-IDF for token and document postings
-                postings_dict = calculate_tf(postings_dict)
-                # Store the tokens in the database
-                store_tokens(conn, postings_dict)
+    # # #loops through each subfolder
+    # for file in find_file_paths(webpages_raw_directory):
+    #     #checks if the subfolder is a directory
+    #     if os.path.isdir(file):
+    #         #goes through each file in the subfolder
+    #         for subfile in find_file_paths(file):
+    #             #tokenizes the document
+    #             token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+    #             #creates the token_list
+    #             postings_dict = create_document_postings(token_DocID_list)
+    #             # Calculate TF-IDF for token and document postings
+    #             postings_dict = calculate_tf(postings_dict)
+    #             # Store the tokens in the database
+    #             store_tokens(conn, postings_dict)
                         #tokenizes the document
-    # file = "C:\\Users\\ianle\\Documents\\UCI\\CS121\\Project3\\webpages\\WEBPAGES_RAW\\0" # AGGGGG
-    # for subfile in find_file_paths(file): 
-    #     token_DocID_list = create_tokenizer_for_individual_doc(subfile, url_dict)
-    #     #creates the token_list
-    #     postings_dict = create_document_postings(token_DocID_list)
-    #     # Calculate TF-IDF for token and document postings
-    #     postings_dict = calculate_tf(postings_dict)
-    #     # Store the tokens in the database
-    #     store_tokens(conn, postings_dict)
+    file = "C:\\Users\\mwong\\CS 121\\Project3M2\\WEBPAGES_RAW\\0" # AGGGGG
+    for subfile in find_file_paths(file): 
+        token_DocID_list = create_tokenizer_for_individual_doc(subfile, url_dict)
+        #creates the token_list
+        postings_dict = create_document_postings(token_DocID_list)
+        # Calculate TF-IDF for token and document postings
+        postings_dict = calculate_tf(postings_dict)
+        # Store the tokens in the database
+        store_tokens(conn, postings_dict)
     end = time.time()
     print(f"\nTime Elapsed: {end-start:.2f} s")
 

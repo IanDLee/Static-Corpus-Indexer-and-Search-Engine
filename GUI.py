@@ -1,8 +1,9 @@
 import tkinter as tk
 from tkinter import ttk
 import sqlite3
+from bs4 import BeautifulSoup
 
-from CreateInvertedIndex import compute_cosine_similarity
+from CreateInvertedIndex import compute_cosine_similarity, get_info
 
 class SearchEngineGUI:
     def __init__(self, root):
@@ -61,10 +62,14 @@ class SearchEngineGUI:
                 c = conn.cursor()
                 c.execute('SELECT path FROM documents WHERE id = ?', (doc_id,))
                 doc_path = c.fetchone()[0]
-                self.results_listbox.insert(tk.END, f"{i}. {doc_path}\n")
+                title, description = get_info("C:/Users/mwong/CS 121/Project3M2/WEBPAGES_RAW/" + doc_id)
+                listbox_entry = f"{i}. Title: {title}, Description: {description}, Path: {doc_path}"
+                self.results_listbox.insert(tk.END, listbox_entry)
+                
             self.status_var.set(str(len(results)) + " results found.")
         else:
             self.results_listbox.insert(tk.END, "No results found.")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
