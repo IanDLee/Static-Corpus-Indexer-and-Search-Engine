@@ -88,7 +88,7 @@ def create_tokenizer_for_individual_doc(file_path, url_dict):
                 #loops through each word and adds lemmatized tuple to the list
                 for word in tokenized_words:
                     if word.isalpha() and word.isascii():
-                        lemmatized_word = lemmatizer.lemmatize(word)
+                        lemmatized_word = lemmatizer.lemmatize(word.lower())
                         token_DocID_list.append((lemmatized_word.lower(), targetDocID, weight))
 
         #gets the words
@@ -103,7 +103,7 @@ def create_tokenizer_for_individual_doc(file_path, url_dict):
         #loops through each word and adds lemmatized tuple to the list
         for word in tokenized_words:
             if word.isalpha() and word.isascii():
-                lemmatized_word = lemmatizer.lemmatize(word)
+                lemmatized_word = lemmatizer.lemmatize(word.lower())
                 token_DocID_list.append((lemmatized_word.lower(), fullDocID, weight))
     
     if len(token_DocID_list) > 0:
