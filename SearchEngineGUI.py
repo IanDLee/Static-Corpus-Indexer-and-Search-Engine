@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import sqlite3
 from bs4 import BeautifulSoup
-from CreateInvertedIndex import compute_cosine_similarity, get_info
+from CreateInvertedIndex import compute_cosine_similarity
 import webbrowser
 
 class SearchEngineGUI:
@@ -103,17 +103,47 @@ class SearchEngineGUI:
                 if '/' in path and path[-1] != '/': path += '/'
                 elif '\\' in path and path[-1] != '\\': path += '\\'
                 title, description = get_info(path + doc_id)  # Using dynamic path here
-                listbox_entry = f"{i}. {title}\n{doc_path}\n{description}\n"
                 self.results_listbox.insert(tk.END, title)
                 self.results_listbox.insert(tk.END, doc_path)
                 self.results_listbox.insert(tk.END, description)
                 self.results_listbox.insert(tk.END, "")
-                
+                print(f"Title:\n {title}\n")
+                print(f"Path:\n{doc_path}\n")
+                print(f"ID:\n{doc_id}\n")
+                print(f"Description:\n {description}\n")
             self.status_var.set(str(len(results)) + " results found.")
         else:
             self.results_listbox.insert(tk.END, "No results found.")
 
+def get_info(path):
+    open_file = open(path, 'r', encoding='utf-8')
+    try:
+        content = open_file.read()
+    except:
+        print("File error")
+        return (None, None)
+    open_file.close()
 
+    soup = BeautifulSoup(content, "html.parser")
+    if(soup):
+        title = soup.find('title')
+    if (title):
+        title = title.string
+
+    description = soup.find('meta', attrs={'name' : 'description'})
+    if(description):
+        description = description.get('content')
+    else:
+        text = soup.get_text().replace('\n', ' ')
+        text = ' '.join(text.split())
+        description = text[0:300] + "..."
+
+    if title is None:
+        title = "No Title"
+    if description is None:
+        description = "No Description"
+
+    return(title, description)
 
 if __name__ == "__main__":
     root = tk.Tk()

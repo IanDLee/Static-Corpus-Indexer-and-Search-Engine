@@ -304,35 +304,6 @@ def compute_cosine_similarity(conn, query):
     # Return sorted scores
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
-def get_info(path):
-    open_file = open(path, 'r', encoding='utf-8')
-    try:
-        content = open_file.read()
-    except:
-        print("File error")
-        return (None, None)
-    open_file.close()
-
-    soup = BeautifulSoup(content, "html.parser")
-    if(soup):
-        title = soup.find('title')
-    if (title):
-        title = title.string
-    else:
-        title = "Missing Title"
-
-    description = soup.find('meta', attrs={'name' : 'description'})
-    if(description):
-        description = description.get('content')
-    else:
-        text = soup.get_text().replace('\n', ' ')
-        text = ' '.join(text.split())
-        description = text[0:300] + "..."
-
-    print(f"Title:\n {title}\n")
-    print(f"Description:\n {description}\n")
-    return(title, description)
-
 def main():
     conn = setup_database()
     #asks user for input to webpages_raw_directory
