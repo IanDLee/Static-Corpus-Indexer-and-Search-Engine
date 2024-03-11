@@ -239,6 +239,9 @@ def calculate_weight(conn):
             token, doc_id, frequency, tf, positions = posting
             weight = posting[3]*idf
             c.execute('INSERT INTO postings (token, doc_id, frequency, tf, weight, positions) VALUES(?, ?, ?, ?, ?, ?)', (token, doc_id, frequency, tf, weight, positions))
+
+    c.execute('''DROP TABLE IF EXISTS tokens''')
+
     conn.commit()
 
 #goes through the postings table and normalizes the weight vectors for each document
@@ -272,6 +275,8 @@ def normalize_weight(conn):
         for token, weight, positions in token_list:
             nweight = weight/magnitude
             c.execute('INSERT INTO final_postings (token, doc_id, positions, nweight) VALUES(?, ?, ?, ?)', (token, doc[0], positions, nweight))
+
+    c.execute('''DROP TABLE IF EXISTS postings''')
     conn.commit()
 
 def compute_cosine_similarity(conn, query):
@@ -311,8 +316,10 @@ def get_info(path):
     soup = BeautifulSoup(content, "html.parser")
     if(soup):
         title = soup.find('title')
-    if(title):
-        title = title.string.strip()
+    if (title):
+        title = title.string
+    else:
+        title = "Missing Title"
 
     description = soup.find('meta', attrs={'name' : 'description'})
     if(description):
@@ -342,30 +349,21 @@ def main():
     url_dict = {}
     for key, value in bookkeeping_data.items():
         url_dict[value] = key
-    # # #loops through each subfolder
-    # for file in find_file_paths(webpages_raw_directory):
-    #     #checks if the subfolder is a directory
-    #     if os.path.isdir(file):
-    #         #goes through each file in the subfolder
-    #         for subfile in find_file_paths(file):
-    #             #tokenizes the document
-    #             token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
-    #             #creates the token_list
-    #             postings_dict = create_document_postings(token_DocID_list)
-    #             # Calculate TF-IDF for token and document postings
-    #             postings_dict = calculate_tf(postings_dict)
-    #             # Store the tokens in the database
-    #             store_tokens(conn, postings_dict)
-                        #tokenizes the document
-    file = "C:\\Users\\mwong\\CS 121\\Project3M2\\WEBPAGES_RAW\\0" # AGGGGG
-    for subfile in find_file_paths(file): 
-        token_DocID_list = create_tokenizer_for_individual_doc(subfile, url_dict)
-        #creates the token_list
-        postings_dict = create_document_postings(token_DocID_list)
-        # Calculate TF-IDF for token and document postings
-        postings_dict = calculate_tf(postings_dict)
-        # Store the tokens in the database
-        store_tokens(conn, postings_dict)
+    #loops through each subfolder
+    for file in find_file_paths(webpages_raw_directory):
+        #checks if the subfolder is a directory
+        if os.path.isdir(file):
+            #goes through each file in the subfolder
+            for subfile in find_file_paths(file):
+                #tokenizes the document
+                token_DocID_list = create_tokenizer_for_individual_doc(subfile, bookkeeping_data)
+                #creates the token_list
+                postings_dict = create_document_postings(token_DocID_list)
+                # Calculate TF-IDF for token and document postings
+                postings_dict = calculate_tf(postings_dict)
+                # Store the tokens in the database
+                store_tokens(conn, postings_dict)
+
     end = time.time()
     print(f"\nTime Elapsed: {end-start:.2f} s")
 
